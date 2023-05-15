@@ -1,6 +1,7 @@
 HOST ?= localhost
 NAMESPACE ?= nameko
 CONTEXT ?= kind-$(NAMESPACE)
+LOCAL_DNS ?= 127.0.0.1.nip.io #address for epinio
 TAG ?= dev
 
 # all in one
@@ -28,6 +29,28 @@ deployK8: kind-create-cluster kind-setup-ingress
 	$(MAKE) create-namespace
 	$(MAKE) deploy-dependencies
 	$(MAKE) install-charts
+
+# deploy for epinio using healm doc as template
+deploy-epinio: kind-create-cluster kind-setup-ingress kind-certmanager
+	helm repo add epinio https://epinio.github.io/helm-charts
+	helm install epinio -n epinio --create-namespace epinio/epinio --set global.domain=$(LOCAL_DNS)
+	epinio login -u admin https://epinio.$(LOCAL_DNS)
+
+# Cert manager for epinio v11
+kind-certmanager:
+	kubectl apply -f cert-manager.yaml
+	sleep 30
+	kubectl wait --namespace cert-manager \
+    --for=condition=available deployment/cert-manager \
+    --timeout=360s
+
+# Alternative for certmanager, but i prefeer to keep yml files locally
+#kind-certmanager:
+#	helm repo add jetstack https://charts.jetstack.io
+#	helm repo update
+#	helm install cert-manager --namespace cert-manager jetstack/cert-manager \
+#        --set installCRDs=true \
+#        --set extraArgs={--enable-certificate-owner-ref=true}
 
 # test
 smoke-test:
