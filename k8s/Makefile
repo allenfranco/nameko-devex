@@ -2,6 +2,8 @@ HOST ?= localhost
 NAMESPACE ?= nameko
 CONTEXT ?= kind-$(NAMESPACE)
 LOCAL_DNS ?= 127.0.0.1.nip.io #address for epinio
+SERVICE_DEPENDENCIES := gateway orders products 
+IMAGES := gateway orders products 
 TAG ?= dev
 
 # all in one
@@ -39,18 +41,94 @@ deploy-epinio: kind-create-cluster kind-setup-ingress kind-certmanager
 # Cert manager for epinio v11
 kind-certmanager:
 	kubectl apply -f cert-manager.yaml
-	sleep 30
+	sleep 5
 	kubectl wait --namespace cert-manager \
     --for=condition=available deployment/cert-manager \
     --timeout=360s
 
-# Alternative for certmanager, but i prefeer to keep yml files locally
+## Alternative for certmanager, but i prefeer to keep yml files locally
 #kind-certmanager:
 #	helm repo add jetstack https://charts.jetstack.io
 #	helm repo update
 #	helm install cert-manager --namespace cert-manager jetstack/cert-manager \
 #        --set installCRDs=true \
 #        --set extraArgs={--enable-certificate-owner-ref=true}
+
+# create the service dependencies for each service in dev env(line 5)
+epinio-service-dependencies:
+	for service_name in $(SERVICE_DEPENDENCIES); do epinio service create $$service_name-dev $(NAMESPACE)-$$service_name; done
+
+
+
+push-epinio-nameko-images: load-nameko-docker-images generate-helm-tgz
+	for image in $(IMAGES); do epinio push -n $$image --container-image-url $(NAMESPACE)/nameko-example-$$image:$(TAG) --timeout-multiplier 1000 --app-chart custom-app; done
+	$(MAKE) epinio-service-dependencies
+
+generate-helm-tgz: 
+	cd charts/epinio-custom-resource && \
+	helm package . && \
+	tgz_url=$$(curl --upload-file ./epinio-allen-app-v1.tgz https://transfer.sh/epinio-allen-app-v1.tgz); \
+	rm -f epinio-allen-app-v1.tgz && \
+	cd ../..; \
+	$(MAKE) install-epinio-custom-chart IMAGE_NAME=custom-app CHART_URL=$$tgz_url; 
+
+
+install-epinio-custom-chart: 
+	cp charts/epinio-app-chart.yaml charts/epinio-app-chart-adapted.yaml
+	echo "  helmChart: $(CHART_URL)" >> charts/epinio-app-chart-adapted.yaml
+	kubectl apply -f charts/epinio-app-chart-adapted.yaml
+	rm charts/epinio-app-chart-adapted.yaml
+	
+load-nameko-docker-images:
+	cd ..; $(MAKE) build
+	kind load docker-image $(NAMESPACE)/nameko-example-gateway:$(TAG) --name $(NAMESPACE)
+	kind load docker-image $(NAMESPACE)/nameko-example-orders:$(TAG) --name $(NAMESPACE)
+	kind load docker-image $(NAMESPACE)/nameko-example-products:$(TAG) --name $(NAMESPACE)
+
+bind-epinio-services:
+	for image in $(IMAGES); do \
+		for service in $(SERVICE_DEPENDENCIES); do \
+			epinio service bind nameko-$$service $$image; \
+		done; \
+	done
+	$(MAKE) epinio-set-app-variables
+
+epinio-set-app-variables:
+	$(MAKE) epinio-bind-rabbitmq-vars
+	$(MAKE) epinio-bind-redis-vars
+	$(MAKE) epinio-bind-postgres-vars
+
+epinio-bind-rabbitmq-vars:
+	for app in $(IMAGES); do \
+		epinio app env set $$app RABBIT_PASSWORD \
+			$$(kubectl get secret $$(kubectl get secrets -n workspace -o jsonpath='{range .items[?(@.data.rabbitmq-password)]}{.metadata.name}{"\n"}{end}' | grep rabbitmq) -n workspace -o jsonpath='{.data.rabbitmq-password}' | base64 --decode); \
+		epinio app env set $$app RABBIT_HOST $$(kubectl get svc -n workspace | grep rabbit | grep -v headless | awk '{print $$1}').workspace.svc.cluster.local; \
+		epinio app env set $$app RABBIT_PORT 5672; \
+		epinio app env set $$app RABBIT_USER user; \
+		epinio app env set $$app RABBIT_MANAGEMENT_PORT 15672; \
+	done
+
+epinio-bind-redis-vars:
+	epinio app env set products REDIS_PASSWORD \
+		$$(kubectl get secret $$(kubectl get secrets -n workspace -o jsonpath='{range .items[?(@.data.redis-password)]}{.metadata.name}{"\n"}{end}' | grep redis) -n workspace -o jsonpath='{.data.redis-password}' | base64 --decode); \
+	epinio app env set products REDIS_HOST \
+		$$(kubectl get svc -n workspace | grep redis-master | awk '{print $$1}').workspace.svc.cluster.local; \
+	epinio app env set products REDIS_PORT 6379
+	epinio app env set products REDIS_INDEX 11
+
+epinio-bind-postgres-vars:
+	epinio app env set orders DB_HOST \
+		$$(kubectl get svc -n workspace | grep postgres | grep -v postgresql-hl | awk '{print $$1}').workspace.svc.cluster.local; \
+	epinio app env set orders DB_PASSWORD $() \
+		$$(kubectl get secret $$(kubectl get secrets -n workspace -o jsonpath='{range .items[?(@.data.postgres-password)]}{.metadata.name}{"\n"}{end}' | grep postgres) -n workspace -o jsonpath='{.data.postgres-password}' | base64 --decode); \
+	epinio app env set orders DB_USER postgres
+	epinio app env set orders DB_NAME postgres
+
+check-epinio-logs:
+	kubectl -n epinio get events --sort-by='{.lastTimestamp}'
+
+
+
 
 # test
 smoke-test:
