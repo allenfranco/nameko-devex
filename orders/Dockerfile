@@ -1,5 +1,6 @@
 FROM nameko-example-builder AS wheels
 
+
 COPY . /application
 
 RUN cd /application && pip wheel .
