@@ -12,12 +12,12 @@ kind-create-cluster:
 
 # src: https://kind.sigs.k8s.io/docs/user/ingress/
 kind-setup-ingress:
-	kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-	sleep 5
+	kubectl apply -f kind-ingress.yaml
+	sleep 30
 	kubectl wait --namespace ingress-nginx \
 		--for=condition=ready pod \
 		--selector=app.kubernetes.io/component=controller \
-		--timeout=90s
+		--timeout=120s
 
 undeployK8:
 	# $(MAKE) delete-namespace
