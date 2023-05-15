@@ -9,9 +9,10 @@ setup(
     install_requires=[
         'nameko==v3.0.0-rc6',
         'nameko-sqlalchemy==1.5.0',
-        'alembic==1.0.10',
+        'alembic==1.9.3',
         'marshmallow==2.19.2',
         'psycopg2-binary==2.8.2',
+        'importlib-metadata==4.13.0'
     ],
     extras_require={
         'dev': [

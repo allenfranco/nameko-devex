@@ -12,6 +12,7 @@ setup(
         "marshmallow==2.19.2",
         "nameko==v3.0.0-rc6",
         "redis==3.2.1",
+        'importlib-metadata==4.13.0'
     ],
     extras_require={
         'dev': [

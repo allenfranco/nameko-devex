@@ -1,4 +1,5 @@
-FROM python:3.7-slim-stretch as base
+FROM python:3.7.13-slim-buster as base
+LABEL maintainer="allenfranco@gmail.com" 
 
 RUN apt-get update && \
     apt-get install --yes curl netcat
@@ -20,7 +21,7 @@ FROM nameko-example-base as builder
 
 RUN apt-get update && \
     apt-get install --yes build-essential autoconf libtool pkg-config \
-    libgflags-dev libgtest-dev clang libc++-dev automake git libpq-dev
+    libgflags-dev libgtest-dev clang libc++-dev python3-psycopg2 automake git libpq-dev
 
 RUN pip install auditwheel
 
