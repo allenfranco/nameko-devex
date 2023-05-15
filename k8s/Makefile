@@ -27,7 +27,7 @@ undeployK8:
 	kind delete cluster --name $(NAMESPACE)
 
 deployK8: kind-create-cluster kind-setup-ingress
-	# $(MAKE) init-helm
+	$(MAKE) init-helm
 	$(MAKE) create-namespace
 	$(MAKE) deploy-dependencies
 	$(MAKE) install-charts
@@ -37,11 +37,12 @@ deploy-epinio: kind-create-cluster kind-setup-ingress kind-certmanager
 	helm repo add epinio https://epinio.github.io/helm-charts
 	helm install epinio -n epinio --create-namespace epinio/epinio --set global.domain=$(LOCAL_DNS)
 	epinio login -u admin https://epinio.$(LOCAL_DNS)
+	$(MAKE) push-epinio-nameko-images
 
 # Cert manager for epinio v11
 kind-certmanager:
 	kubectl apply -f cert-manager.yaml
-	sleep 5
+	sleep 20
 	kubectl wait --namespace cert-manager \
     --for=condition=available deployment/cert-manager \
     --timeout=360s
@@ -58,8 +59,6 @@ kind-certmanager:
 epinio-service-dependencies:
 	for service_name in $(SERVICE_DEPENDENCIES); do epinio service create $$service_name-dev $(NAMESPACE)-$$service_name; done
 
-
-
 push-epinio-nameko-images: load-nameko-docker-images generate-helm-tgz
 	for image in $(IMAGES); do epinio push -n $$image --container-image-url $(NAMESPACE)/nameko-example-$$image:$(TAG) --timeout-multiplier 1000 --app-chart custom-app; done
 	$(MAKE) epinio-service-dependencies
@@ -71,7 +70,6 @@ generate-helm-tgz:
 	rm -f epinio-allen-app-v1.tgz && \
 	cd ../..; \
 	$(MAKE) install-epinio-custom-chart IMAGE_NAME=custom-app CHART_URL=$$tgz_url; 
-
 
 install-epinio-custom-chart: 
 	cp charts/epinio-app-chart.yaml charts/epinio-app-chart-adapted.yaml
@@ -126,9 +124,6 @@ epinio-bind-postgres-vars:
 
 check-epinio-logs:
 	kubectl -n epinio get events --sort-by='{.lastTimestamp}'
-
-
-
 
 # test
 smoke-test:

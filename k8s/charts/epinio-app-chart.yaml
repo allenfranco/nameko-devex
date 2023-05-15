@@ -1,0 +1,8 @@
+apiVersion: application.epinio.io/v1
+kind: AppChart
+metadata:
+  namespace: epinio
+  name: custom-app
+spec:
+  shortDescription: Custom Epinio for Nginx
+  description: Custom Epinio for Nginx 
