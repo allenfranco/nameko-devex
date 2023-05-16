@@ -6,6 +6,7 @@ SERVICE_DEPENDENCIES := gateway orders products
 IMAGES := gateway orders products 
 TAG ?= dev
 
+
 # all in one
 kind-create-cluster:
 	kind create cluster --config kind-config.yaml --name $(NAMESPACE)
@@ -15,61 +16,54 @@ kind-create-cluster:
 
 # src: https://kind.sigs.k8s.io/docs/user/ingress/
 kind-setup-ingress:
-	kubectl apply -f kind-ingress.yaml
+	kubectl apply -f nginx_components.yaml 
 	sleep 30
 	kubectl wait --namespace ingress-nginx \
 		--for=condition=ready pod \
 		--selector=app.kubernetes.io/component=controller \
-		--timeout=120s
+		--timeout=250s
+
 
 undeployK8:
 	# $(MAKE) delete-namespace
 	kind delete cluster --name $(NAMESPACE)
 
 deployK8: kind-create-cluster kind-setup-ingress
-	$(MAKE) init-helm
+	# $(MAKE) init-helm
 	$(MAKE) create-namespace
 	$(MAKE) deploy-dependencies
 	$(MAKE) install-charts
 
-# deploy for epinio using healm doc as template
-deploy-epinio: kind-create-cluster kind-setup-ingress kind-certmanager
+# epinio
+deploy-epinio: kind-create-cluster kind-setup-ingress kind-setup-cert-manager
 	helm repo add epinio https://epinio.github.io/helm-charts
 	helm install epinio -n epinio --create-namespace epinio/epinio --set global.domain=$(LOCAL_DNS)
 	epinio login -u admin https://epinio.$(LOCAL_DNS)
 	$(MAKE) push-epinio-nameko-images
 
-# Cert manager for epinio v11
-kind-certmanager:
+kind-setup-cert-manager:
 	kubectl apply -f cert-manager.yaml
 	sleep 20
 	kubectl wait --namespace cert-manager \
     --for=condition=available deployment/cert-manager \
-    --timeout=360s
+    --timeout=300s
 
-## Alternative for certmanager, but i prefeer to keep yml files locally
-#kind-certmanager:
-#	helm repo add jetstack https://charts.jetstack.io
-#	helm repo update
-#	helm install cert-manager --namespace cert-manager jetstack/cert-manager \
-#        --set installCRDs=true \
-#        --set extraArgs={--enable-certificate-owner-ref=true}
-
-# create the service dependencies for each service in dev env(line 5)
-epinio-service-dependencies:
+create-epinio-service-dependencies:
 	for service_name in $(SERVICE_DEPENDENCIES); do epinio service create $$service_name-dev $(NAMESPACE)-$$service_name; done
+	$(MAKE) bind-epinio-services
 
 push-epinio-nameko-images: load-nameko-docker-images generate-helm-tgz
 	for image in $(IMAGES); do epinio push -n $$image --container-image-url $(NAMESPACE)/nameko-example-$$image:$(TAG) --timeout-multiplier 1000 --app-chart custom-app; done
-	$(MAKE) epinio-service-dependencies
+	$(MAKE) create-epinio-service-dependencies
 
 generate-helm-tgz: 
 	cd charts/epinio-custom-resource && \
 	helm package . && \
-	tgz_url=$$(curl --upload-file ./epinio-allen-app-v1.tgz https://transfer.sh/epinio-allen-app-v1.tgz); \
-	rm -f epinio-allen-app-v1.tgz && \
+	tgz_url=$$(curl --upload-file ./epinio-custom-app-0.1.0.tgz https://transfer.sh/epinio-custom-app-0.1.0.tgz); \
+	rm -f epinio-custom-app-0.1.0.tgz && \
 	cd ../..; \
 	$(MAKE) install-epinio-custom-chart IMAGE_NAME=custom-app CHART_URL=$$tgz_url; 
+
 
 install-epinio-custom-chart: 
 	cp charts/epinio-app-chart.yaml charts/epinio-app-chart-adapted.yaml
@@ -124,6 +118,10 @@ epinio-bind-postgres-vars:
 
 check-epinio-logs:
 	kubectl -n epinio get events --sort-by='{.lastTimestamp}'
+
+# test epinio
+epinio-smoke-test:
+	../test/nex-smoketest.sh https://gateway.$(LOCAL_DNS)
 
 # test
 smoke-test:
