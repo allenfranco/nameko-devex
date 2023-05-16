@@ -38,7 +38,6 @@ deployK8: kind-create-cluster kind-setup-ingress
 deploy-epinio: kind-create-cluster kind-setup-ingress kind-setup-cert-manager
 	helm repo add epinio https://epinio.github.io/helm-charts
 	helm install epinio -n epinio --create-namespace epinio/epinio --set global.domain=$(LOCAL_DNS)
-	epinio login -u admin https://epinio.$(LOCAL_DNS)
 	$(MAKE) push-epinio-nameko-images
 
 kind-setup-cert-manager:
@@ -59,15 +58,14 @@ push-epinio-nameko-images: load-nameko-docker-images generate-helm-tgz
 generate-helm-tgz: 
 	cd charts/epinio-custom-resource && \
 	helm package . && \
-	tgz_url=$$(curl --upload-file ./epinio-custom-app-0.1.0.tgz https://transfer.sh/epinio-custom-app-0.1.0.tgz); \
-	rm -f epinio-custom-app-0.1.0.tgz && \
+	tgz_url=$$(curl --upload-file ./epinio-application-0.1.26.tgz https://transfer.sh/epinio-application-0.1.26.tgz); \
+	rm -f epinio-application-0.1.26.tgz && \
 	cd ../..; \
-	$(MAKE) install-epinio-custom-chart IMAGE_NAME=custom-app CHART_URL=$$tgz_url; 
-
+	$(MAKE) install-epinio-custom-chart IMAGE_NAME=epinio-application-0.1.26.tgz CHART_URL=$$tgz_url; 
 
 install-epinio-custom-chart: 
 	cp charts/epinio-app-chart.yaml charts/epinio-app-chart-adapted.yaml
-	echo "  helmChart: $(CHART_URL)" >> charts/epinio-app-chart-adapted.yaml
+#echo "  helmChart: $(CHART_URL)" >> charts/epinio-app-chart-adapted.yaml
 	kubectl apply -f charts/epinio-app-chart-adapted.yaml
 	rm charts/epinio-app-chart-adapted.yaml
 	
@@ -116,9 +114,6 @@ epinio-bind-postgres-vars:
 	epinio app env set orders DB_USER postgres
 	epinio app env set orders DB_NAME postgres
 
-check-epinio-logs:
-	kubectl -n epinio get events --sort-by='{.lastTimestamp}'
-
 # test epinio
 epinio-smoke-test:
 	../test/nex-smoketest.sh https://gateway.$(LOCAL_DNS)
@@ -129,36 +124,6 @@ smoke-test:
 
 perf-test:
 	cd ..; ./test/nex-bzt.sh http://localhost
-
-# kubectl short-cuts
-get-nodes:
-	kubectl --context=$(CONTEXT) --namespace $(NAMESPACE) get nodes
-
-get-services:
-	kubectl --context=$(CONTEXT) --namespace $(NAMESPACE) get services -o wide
-
-get-pods:
-	kubectl --context=$(CONTEXT) --namespace $(NAMESPACE) get pods -o wide
-
-watch-svcs-pods:
-	watch -n 0 \
-	'kubectl --context=$(CONTEXT) --namespace $(NAMESPACE) get services -o wide; echo "---"; \
-	 kubectl --context=$(CONTEXT) --namespace $(NAMESPACE) get pods -o wide'
-
-get-logs:
-	kubectl get pods --context=$(CONTEXT) --namespace $(NAMESPACE) --no-headers=true | awk '{print $$1}' | grep $(name) | xargs kubectl --context=$(CONTEXT) --namespace $(NAMESPACE) logs -f
-
-describe-pod:
-	kubectl get pods --context=$(CONTEXT) --namespace $(NAMESPACE) --no-headers=true | awk '{print $$1}' | grep $(name) | xargs kubectl --context=$(CONTEXT) --namespace $(NAMESPACE) describe pod
-
-describe-svc:
-	kubectl get services --context=$(CONTEXT) --namespace $(NAMESPACE) --no-headers=true | awk '{print $$1}' | grep $(name) | xargs kubectl --context=$(CONTEXT) --namespace $(NAMESPACE) describe service
-
-create-namespace:
-	kubectl --context=$(CONTEXT) apply -f namespace.yaml
-
-delete-namespace:
-	kubectl --context=$(CONTEXT) delete -f namespace.yaml
 
 # helm
 init-helm:
