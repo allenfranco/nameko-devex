@@ -23,7 +23,6 @@ kind-setup-ingress:
 		--selector=app.kubernetes.io/component=controller \
 		--timeout=250s
 
-
 undeployK8:
 	# $(MAKE) delete-namespace
 	kind delete cluster --name $(NAMESPACE)
@@ -38,6 +37,7 @@ deployK8: kind-create-cluster kind-setup-ingress
 deploy-epinio: kind-create-cluster kind-setup-ingress kind-setup-cert-manager
 	helm repo add epinio https://epinio.github.io/helm-charts
 	helm install epinio -n epinio --create-namespace epinio/epinio --set global.domain=$(LOCAL_DNS)
+	epinio login -u admin https://epinio.$(LOCAL_DNS)
 	$(MAKE) push-epinio-nameko-images
 
 kind-setup-cert-manager:

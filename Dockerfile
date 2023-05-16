@@ -25,11 +25,7 @@ RUN apt-get update && \
 
 RUN pip install auditwheel
 
-RUN find / -name libpq.so.5
-
 COPY . /application
-
-RUN find / -name libpq.so.5
 
 ENV PIP_WHEEL_DIR=/application/wheelhouse
 ENV PIP_FIND_LINKS=/application/wheelhouse
